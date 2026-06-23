@@ -37,23 +37,9 @@
     async function loadData() {
       try {
         debugInfo += '🔄 Firebase connectie...\n';
-        
-        // Probeer ALLE collections te vinden
-        debugInfo += '\n📚 Alle collections:\n';
-        const collSnap = await db.listCollections();
-        collSnap.forEach(coll => {
-          debugInfo += `  - ${coll.id}\n`;
-        });
-
-        // Specifiek: toetscijfers collection
-        debugInfo += '\n📄 toetscijfers documenten:\n';
-        const toetsSnap = await db.collection('toetscijfers').get();
-        toetsSnap.forEach(doc => {
-          debugInfo += `  - ${doc.id}\n`;
-        });
 
         // Haal toetscijfers/data op
-        debugInfo += '\n💾 Laden toetscijfers/data:\n';
+        debugInfo += '💾 Laden toetscijfers/data:\n';
         const doc = await db.collection('toetscijfers').doc('data').get();
         
         if (doc.exists) {
