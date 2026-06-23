@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Toetscijfers - ISK</title>
+  <title>Toetscijfers - DEBUG</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Fredoka', sans-serif; }
+    pre { background: #f0f0f0; padding: 10px; border-radius: 5px; overflow-x: auto; font-size: 12px; }
   </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-100 p-4">
   <div id="app"></div>
 
   <script>
@@ -29,143 +30,106 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // App state
-    let isLoggedIn = false;
+    let debugInfo = '';
     let students = [];
     let grades = {};
-    const themes = ['Thema 1', 'Thema 2', 'Thema 3', 'Thema 4', 'Thema 5', 'Thema 6', 'Thema 7', 'Thema 8'];
 
-    // Load from Firebase
     async function loadData() {
       try {
-        console.log('Loading from Firebase...');
+        debugInfo += '🔄 Firebase connectie...\n';
+        
+        // Probeer ALLE collections te vinden
+        debugInfo += '\n📚 Alle collections:\n';
+        const collSnap = await db.listCollections();
+        collSnap.forEach(coll => {
+          debugInfo += `  - ${coll.id}\n`;
+        });
+
+        // Specifiek: toetscijfers collection
+        debugInfo += '\n📄 toetscijfers documenten:\n';
+        const toetsSnap = await db.collection('toetscijfers').get();
+        toetsSnap.forEach(doc => {
+          debugInfo += `  - ${doc.id}\n`;
+        });
+
+        // Haal toetscijfers/data op
+        debugInfo += '\n💾 Laden toetscijfers/data:\n';
         const doc = await db.collection('toetscijfers').doc('data').get();
+        
         if (doc.exists) {
-          const data = doc.data();
-          students = data.students || [];
-          grades = data.grades || {};
-          console.log('✅ Data loaded:', students.length, 'students');
+          const rawData = doc.data();
+          debugInfo += '✅ Document bestaat!\n';
+          debugInfo += '\n📦 RAW Data:\n' + JSON.stringify(rawData, null, 2) + '\n';
+          
+          // Check velden
+          debugInfo += '\n🔍 Veld controle:\n';
+          debugInfo += `  - students type: ${typeof rawData.students}\n`;
+          debugInfo += `  - students is array: ${Array.isArray(rawData.students)}\n`;
+          debugInfo += `  - students length: ${Array.isArray(rawData.students) ? rawData.students.length : 'N/A'}\n`;
+          debugInfo += `  - grades type: ${typeof rawData.grades}\n`;
+          
+          if (Array.isArray(rawData.students)) {
+            students = rawData.students;
+            debugInfo += `\n✅ ${students.length} leerlingen geladen!\n`;
+            debugInfo += '\n👥 Leerlingen:\n';
+            students.forEach((s, i) => {
+              debugInfo += `  ${i+1}. ${s.name || s.naam || s.N || '(geen naam)'} (id: ${s.id})\n`;
+            });
+          } else {
+            debugInfo += '\n⚠️ "students" is geen array!\n';
+          }
+
+          if (typeof rawData.grades === 'object' && rawData.grades !== null) {
+            grades = rawData.grades;
+          }
         } else {
-          console.log('No document found');
+          debugInfo += '❌ Document NIET gevonden!\n';
         }
+
       } catch (error) {
-        console.error('❌ ERROR:', error.code, error.message);
-        alert('Firebase error: ' + error.message);
+        debugInfo += `\n❌ FOUT: ${error.code}\n${error.message}\n`;
       }
+
       render();
-    }
-
-    // Save to Firebase
-    async function saveData() {
-      try {
-        await db.collection('toetscijfers').doc('data').set({ students, grades });
-        console.log('✅ Saved');
-      } catch (error) {
-        console.error('Save error:', error.message);
-      }
-    }
-
-    function login(pwd) {
-      if (pwd === 'ISK2026!') {
-        isLoggedIn = true;
-        loadData();
-      } else {
-        alert('Wrong password');
-      }
-    }
-
-    function addStudent(name) {
-      if (students.length >= 18) return;
-      students.push({ id: Date.now(), name });
-      students.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
-      saveData();
-      render();
-    }
-
-    function removeStudent(id) {
-      students = students.filter(s => s.id !== id);
-      delete grades[id];
-      saveData();
-      render();
-    }
-
-    function setGrade(studentId, themeIdx, grade) {
-      if (!grades[studentId]) grades[studentId] = {};
-      grades[studentId][themeIdx] = grade ? parseFloat(grade) : null;
-      saveData();
     }
 
     function render() {
       const app = document.getElementById('app');
-
-      if (!isLoggedIn) {
-        app.innerHTML = `
-          <div class="min-h-screen bg-blue-500 flex items-center justify-center">
-            <form onsubmit="login(document.getElementById('pwd').value); return false;" class="bg-white p-8 rounded-lg shadow-lg">
-              <h1 class="text-2xl font-bold mb-4">Toetscijfers</h1>
-              <input id="pwd" type="password" placeholder="Password" class="w-full px-4 py-2 border rounded mb-4" autofocus>
-              <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded font-bold">Login</button>
-            </form>
-          </div>
-        `;
-        return;
-      }
-
-      let html = `
-        <div class="p-4 max-w-7xl mx-auto">
-          <h1 class="text-3xl font-bold mb-4">Toetscijfers ISK</h1>
+      
+      app.innerHTML = `
+        <div class="max-w-2xl mx-auto">
+          <h1 class="text-3xl font-bold mb-4">🔧 DEBUG MODE</h1>
           
-          <div class="bg-white p-4 rounded mb-4">
-            <input id="newName" type="text" placeholder="Naam..." class="w-64 px-3 py-2 border rounded">
-            <button onclick="addStudent(document.getElementById('newName').value); document.getElementById('newName').value='';" class="bg-green-500 text-white px-4 py-2 rounded ml-2">+</button>
-            <span class="ml-4 text-gray-600">${students.length}/18</span>
+          <div class="bg-white p-4 rounded-lg shadow mb-4">
+            <h2 class="text-xl font-bold mb-2">Firebase Diagnose:</h2>
+            <pre>${debugInfo}</pre>
           </div>
 
-          <div class="bg-white rounded overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-blue-600 text-white">
-                <tr>
-                  <th class="px-4 py-2 text-left">Leerling</th>
-                  ${themes.map(t => `<th class="px-2 py-2 text-center">${t}</th>`).join('')}
-                  <th class="px-4 py-2">Acties</th>
-                </tr>
-              </thead>
-              <tbody>
-      `;
+          <div class="bg-white p-4 rounded-lg shadow">
+            <h2 class="text-xl font-bold mb-2">Geladen leerlingen (${students.length}):</h2>
+            ${students.length > 0 ? `
+              <ul class="space-y-2">
+                ${students.map((s, i) => `
+                  <li class="bg-blue-50 p-2 rounded">
+                    ${i+1}. <strong>${s.name || s.naam || 'GEEN NAAM'}</strong> 
+                    <span class="text-gray-500 text-sm">(id: ${s.id})</span>
+                  </li>
+                `).join('')}
+              </ul>
+            ` : `
+              <p class="text-red-600 font-bold">⚠️ GEEN LEERLINGEN GELADEN!</p>
+            `}
+          </div>
 
-      students.forEach(student => {
-        html += `<tr class="border-b hover:bg-gray-50">
-          <td class="px-4 py-2 font-medium">${student.name}</td>
-        `;
-        
-        themes.forEach((_, idx) => {
-          const val = grades[student.id]?.[idx] || '';
-          html += `
-            <td class="px-2 py-2 text-center">
-              <input type="number" value="${val}" onchange="setGrade(${student.id}, ${idx}, this.value)" 
-                     class="w-16 px-2 py-1 border rounded text-center" min="1" max="10" step="0.1">
-            </td>
-          `;
-        });
-
-        html += `
-          <td class="px-4 py-2">
-            <button onclick="removeStudent(${student.id})" class="bg-red-500 text-white px-3 py-1 rounded">X</button>
-          </td>
-        </tr>`;
-      });
-
-      html += `
-              </tbody>
-            </table>
+          <div class="mt-4">
+            <button onclick="location.reload()" class="bg-blue-500 text-white px-4 py-2 rounded">Opnieuw laden</button>
           </div>
         </div>
       `;
-
-      app.innerHTML = html;
     }
 
-    render();
+    // Start
+    loadData();
   </script>
 </body>
 </html>
