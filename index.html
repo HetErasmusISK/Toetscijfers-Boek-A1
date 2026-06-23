@@ -3,28 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Toetscijfers Invoer - ISK Almelo</title>
+  <title>Toetscijfers - ISK</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
-  
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    * { font-family: 'Fredoka', sans-serif; }
-    .mono { font-family: 'Courier New', monospace; }
-    .grade-input { transition: all 0.3s ease; }
-    .grade-input:focus { transform: scale(1.05); box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); }
-    .header-accent { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .card-shadow { box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.1), 0 2px 4px -1px rgba(99, 102, 241, 0.06); }
+    body { font-family: 'Fredoka', sans-serif; }
   </style>
 </head>
-<body>
-  <div id="root"></div>
+<body class="bg-gray-100">
+  <div id="app"></div>
 
   <script>
-    // ============================================
-    // FIREBASE CONFIGURATIE
-    // ============================================
+    // Firebase init
     const firebaseConfig = {
       apiKey: "AIzaSyAU0_2AYUBuDnOZdwCxZB9biVt2Mdbei9E",
       authDomain: "toetsinvoer-taalcompleet-a1.firebaseapp.com",
@@ -36,293 +28,144 @@
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
-    const APP_PASSWORD = 'ISK2026!';
 
-    // ============================================
-    // GLOBALE STAAT
-    // ============================================
-    let state = {
-      isAuthenticated: false,
-      students: [],
-      grades: {},
-      themes: Array.from({ length: 8 }, (_, i) => `Thema ${i + 1}`)
-    };
+    // App state
+    let isLoggedIn = false;
+    let students = [];
+    let grades = {};
+    const themes = ['Thema 1', 'Thema 2', 'Thema 3', 'Thema 4', 'Thema 5', 'Thema 6', 'Thema 7', 'Thema 8'];
 
-    // ============================================
-    // FIRESTORE FUNCTIES
-    // ============================================
-    function loadDataFromFirebase() {
-      db.collection('toetscijfers').doc('data').onSnapshot((doc) => {
+    // Load from Firebase
+    async function loadData() {
+      try {
+        console.log('Loading from Firebase...');
+        const doc = await db.collection('toetscijfers').doc('data').get();
         if (doc.exists) {
           const data = doc.data();
-          state.students = data.students || [];
-          state.grades = data.grades || {};
+          students = data.students || [];
+          grades = data.grades || {};
+          console.log('✅ Data loaded:', students.length, 'students');
         } else {
-          db.collection('toetscijfers').doc('data').set({
-            students: [],
-            grades: {}
-          });
+          console.log('No document found');
         }
-        render();
-      }, (error) => {
-        console.error('Firebase error:', error);
-        alert('Fout bij het laden van Firebase. Check console.');
-      });
+      } catch (error) {
+        console.error('❌ ERROR:', error.code, error.message);
+        alert('Firebase error: ' + error.message);
+      }
+      render();
     }
 
-    function saveToFirebase() {
-      db.collection('toetscijfers').doc('data').set({
-        students: state.students,
-        grades: state.grades
-      }).catch(error => {
-        console.error('Error saving:', error);
-        alert('Fout bij opslaan naar Firebase');
-      });
-    }
-
-    // ============================================
-    // EVENT HANDLERS
-    // ============================================
-    function handleLogin(e) {
-      e.preventDefault();
-      const password = document.getElementById('passwordInput').value;
-      if (password === APP_PASSWORD) {
-        state.isAuthenticated = true;
-        sessionStorage.setItem('isAuthenticated', 'true');
-        loadDataFromFirebase();
-        render();
-      } else {
-        alert('Onjuist wachtwoord');
+    // Save to Firebase
+    async function saveData() {
+      try {
+        await db.collection('toetscijfers').doc('data').set({ students, grades });
+        console.log('✅ Saved');
+      } catch (error) {
+        console.error('Save error:', error.message);
       }
     }
 
-    function addStudent() {
-      const input = document.getElementById('newStudentInput');
-      const name = input.value.trim();
-      if (!name || state.students.length >= 18) return;
+    function login(pwd) {
+      if (pwd === 'ISK2026!') {
+        isLoggedIn = true;
+        loadData();
+      } else {
+        alert('Wrong password');
+      }
+    }
 
-      state.students.push({ id: Date.now(), name });
-      state.students.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
-      input.value = '';
-      saveToFirebase();
+    function addStudent(name) {
+      if (students.length >= 18) return;
+      students.push({ id: Date.now(), name });
+      students.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
+      saveData();
       render();
     }
 
-    function removeStudent(studentId) {
-      if (!confirm('Leerling verwijderen?')) return;
-      state.students = state.students.filter(s => s.id !== studentId);
-      delete state.grades[studentId];
-      saveToFirebase();
+    function removeStudent(id) {
+      students = students.filter(s => s.id !== id);
+      delete grades[id];
+      saveData();
       render();
     }
 
-    function updateGrade(studentId, themeIdx, value) {
-      const grade = value === '' ? null : parseFloat(value);
-      if (grade !== null && (grade < 1 || grade > 10)) return;
-
-      const today = new Date();
-      const dateStr = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
-
-      if (!state.grades[studentId]) state.grades[studentId] = {};
-      state.grades[studentId][themeIdx] = grade !== null ? { grade, date: dateStr } : null;
-
-      saveToFirebase();
-    }
-
-    function calculateAverage(studentId, period) {
-      const studentGrades = state.grades[studentId];
-      if (!studentGrades) return null;
-
-      const validGrades = Object.entries(studentGrades)
-        .filter(([_, data]) => data && data.grade)
-        .filter(([_, data]) => {
-          const [day, month, year] = data.date.split('-').map(Number);
-          if (period === 1) return month >= 9 || month <= 1;
-          return month >= 2 && month <= 8;
-        })
-        .map(([_, data]) => data.grade);
-
-      if (validGrades.length === 0) return null;
-      const avg = validGrades.reduce((a, b) => a + b, 0) / validGrades.length;
-      return avg.toFixed(1);
-    }
-
-    function exportData() {
-      const data = JSON.stringify({ students: state.students, grades: state.grades }, null, 2);
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `toetscijfers-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-    }
-
-    function importData(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const imported = JSON.parse(event.target.result);
-          state.students = imported.students.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
-          state.grades = imported.grades;
-          saveToFirebase();
-          alert('Data geïmporteerd!');
-        } catch (error) {
-          alert('Fout bij importeren');
-        }
-      };
-      reader.readAsText(file);
-    }
-
-    function importNames() {
-      const input = prompt('Plak namen (elke naam op een nieuwe regel):');
-      if (!input) return;
-      const names = input.split('\n').map(n => n.trim()).filter(n => n);
-      names.forEach(name => {
-        if (!state.students.some(s => s.name === name)) {
-          state.students.push({ id: Date.now() + Math.random(), name });
-        }
-      });
-      state.students.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
-      saveToFirebase();
-      render();
-    }
-
-    // ============================================
-    // RENDER FUNCTIES
-    // ============================================
-    function renderLoginScreen() {
-      return `
-        <div class="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4">
-          <div class="bg-white p-8 rounded-2xl card-shadow max-w-md w-full">
-            <h1 class="text-3xl font-bold text-center mb-6 header-accent">
-              Toetscijfers Invoer
-            </h1>
-            <form onsubmit="handleLogin(event)" class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Wachtwoord</label>
-                <input id="passwordInput" type="password" placeholder="Voer wachtwoord in" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" autofocus />
-              </div>
-              <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2 px-4 rounded-lg hover:from-indigo-700 hover:to-purple-700 font-medium">
-                Inloggen
-              </button>
-            </form>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderApp() {
-      let html = `
-        <div class="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-6">
-          <div class="max-w-7xl mx-auto">
-            <div class="bg-white rounded-2xl card-shadow p-6 mb-6">
-              <h1 class="text-4xl font-bold mb-2 header-accent">Toetscijfers Boek A1</h1>
-              <p class="text-gray-600">ISK Het Erasmus - Almelo</p>
-            </div>
-
-            <div class="bg-white rounded-2xl card-shadow p-6 mb-6">
-              <div class="flex flex-wrap gap-3 mb-4">
-                <button onclick="importNames()" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">➕ Namen</button>
-                <label class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 cursor-pointer">
-                  ⬆️ Import
-                  <input type="file" accept=".json" onchange="importData(event)" class="hidden" />
-                </label>
-                <button onclick="exportData()" class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600">⬇️ Export</button>
-              </div>
-              <div class="flex gap-2">
-                <input id="newStudentInput" type="text" placeholder="Naam..." class="flex-1 px-4 py-2 border border-gray-300 rounded-lg" maxlength="50" />
-                <button onclick="addStudent()" ${state.students.length >= 18 ? 'disabled' : ''} class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400">Toevoegen</button>
-              </div>
-              <p class="text-sm text-gray-500 mt-2">${state.students.length}/18 leerlingen</p>
-            </div>
-
-            <div class="bg-white rounded-2xl card-shadow overflow-x-auto">
-              <table class="w-full min-w-max">
-                <thead class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
-                  <tr>
-                    <th class="px-6 py-4 text-left font-semibold sticky left-0 bg-gradient-to-r from-indigo-600 to-purple-600">Leerling</th>
-      `;
-
-      // Thema headers
-      state.themes.forEach(theme => {
-        html += `<th class="px-4 py-4 text-center font-semibold">${theme}</th>`;
-      });
-
-      html += `
-                    <th class="px-4 py-4 text-center font-semibold bg-indigo-700">P1/2</th>
-                    <th class="px-4 py-4 text-center font-semibold bg-purple-700">P3/4</th>
-                    <th class="px-4 py-4 text-center font-semibold">Acties</th>
-                  </tr>
-                </thead>
-                <tbody>
-      `;
-
-      // Student rows
-      state.students.forEach((student, sIdx) => {
-        html += `
-          <tr class="border-b border-gray-100 hover:bg-indigo-50">
-            <td class="px-6 py-3 font-medium sticky left-0 bg-white">${student.name}</td>
-        `;
-
-        // Grade inputs
-        state.themes.forEach((_, tIdx) => {
-          const gradeData = state.grades[student.id]?.[tIdx];
-          html += `<td class="px-4 py-3 text-center">
-            <input type="number" min="1" max="10" step="0.1" value="${gradeData?.grade || ''}" onchange="updateGrade(${student.id}, ${tIdx}, this.value)" class="grade-input w-20 px-3 py-2 text-center border border-gray-300 rounded-lg mono" placeholder="-" />
-          </td>`;
-        });
-
-        const p1 = calculateAverage(student.id, 1);
-        const p2 = calculateAverage(student.id, 2);
-
-        html += `
-            <td class="px-4 py-3 text-center bg-indigo-50">
-              <span class="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full font-semibold mono">${p1 || '-'}</span>
-            </td>
-            <td class="px-4 py-3 text-center bg-purple-50">
-              <span class="inline-block px-3 py-1 bg-purple-100 text-purple-800 rounded-full font-semibold mono">${p2 || '-'}</span>
-            </td>
-            <td class="px-4 py-3 text-center">
-              <button onclick="removeStudent(${student.id})" class="text-red-500 hover:text-red-700 px-2">🗑️</button>
-            </td>
-          </tr>
-        `;
-      });
-
-      html += `
-                </tbody>
-              </table>
-            </div>
-
-            <div class="mt-6 text-center text-sm text-gray-500">
-              <p>ISK Het Erasmus - Toetscijfers 2026</p>
-              <p>Firebase Real-time Sync ✅</p>
-            </div>
-          </div>
-        </div>
-      `;
-      return html;
+    function setGrade(studentId, themeIdx, grade) {
+      if (!grades[studentId]) grades[studentId] = {};
+      grades[studentId][themeIdx] = grade ? parseFloat(grade) : null;
+      saveData();
     }
 
     function render() {
-      const root = document.getElementById('root');
-      root.innerHTML = state.isAuthenticated ? renderApp() : renderLoginScreen();
+      const app = document.getElementById('app');
+
+      if (!isLoggedIn) {
+        app.innerHTML = `
+          <div class="min-h-screen bg-blue-500 flex items-center justify-center">
+            <form onsubmit="login(document.getElementById('pwd').value); return false;" class="bg-white p-8 rounded-lg shadow-lg">
+              <h1 class="text-2xl font-bold mb-4">Toetscijfers</h1>
+              <input id="pwd" type="password" placeholder="Password" class="w-full px-4 py-2 border rounded mb-4" autofocus>
+              <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded font-bold">Login</button>
+            </form>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `
+        <div class="p-4 max-w-7xl mx-auto">
+          <h1 class="text-3xl font-bold mb-4">Toetscijfers ISK</h1>
+          
+          <div class="bg-white p-4 rounded mb-4">
+            <input id="newName" type="text" placeholder="Naam..." class="w-64 px-3 py-2 border rounded">
+            <button onclick="addStudent(document.getElementById('newName').value); document.getElementById('newName').value='';" class="bg-green-500 text-white px-4 py-2 rounded ml-2">+</button>
+            <span class="ml-4 text-gray-600">${students.length}/18</span>
+          </div>
+
+          <div class="bg-white rounded overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-blue-600 text-white">
+                <tr>
+                  <th class="px-4 py-2 text-left">Leerling</th>
+                  ${themes.map(t => `<th class="px-2 py-2 text-center">${t}</th>`).join('')}
+                  <th class="px-4 py-2">Acties</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      students.forEach(student => {
+        html += `<tr class="border-b hover:bg-gray-50">
+          <td class="px-4 py-2 font-medium">${student.name}</td>
+        `;
+        
+        themes.forEach((_, idx) => {
+          const val = grades[student.id]?.[idx] || '';
+          html += `
+            <td class="px-2 py-2 text-center">
+              <input type="number" value="${val}" onchange="setGrade(${student.id}, ${idx}, this.value)" 
+                     class="w-16 px-2 py-1 border rounded text-center" min="1" max="10" step="0.1">
+            </td>
+          `;
+        });
+
+        html += `
+          <td class="px-4 py-2">
+            <button onclick="removeStudent(${student.id})" class="bg-red-500 text-white px-3 py-1 rounded">X</button>
+          </td>
+        </tr>`;
+      });
+
+      html += `
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      app.innerHTML = html;
     }
 
-    // ============================================
-    // INIT
-    // ============================================
-    window.addEventListener('DOMContentLoaded', () => {
-      const authStatus = sessionStorage.getItem('isAuthenticated');
-      if (authStatus === 'true') {
-        state.isAuthenticated = true;
-        loadDataFromFirebase();
-      } else {
-        render();
-      }
-    });
+    render();
   </script>
 </body>
 </html>
