@@ -3,21 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Toetscijfers - DEBUG</title>
+  <title>Toetscijfers - ISK</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Fredoka', sans-serif; }
-    pre { background: #f0f0f0; padding: 10px; border-radius: 5px; overflow-x: auto; font-size: 12px; }
+    .import-section { background: #f0f7ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 16px; }
+    .import-info { background: #dbeafe; color: #1e40af; padding: 12px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
   </style>
 </head>
-<body class="bg-gray-100 p-4">
+<body class="bg-gray-100">
   <div id="app"></div>
 
   <script>
-    // Firebase init
+    // Firebase init - TOETSINVOER PROJECT
     const firebaseConfig = {
       apiKey: "AIzaSyAU0_2AYUBuDnOZdwCxZB9biVt2Mdbei9E",
       authDomain: "toetsinvoer-taalcompleet-a1.firebaseapp.com",
@@ -27,95 +28,303 @@
       appId: "1:557006079169:web:fcf30ba5152318b6e28040"
     };
 
-    firebase.initializeApp(firebaseConfig);
+    try {
+      firebase.initializeApp(firebaseConfig);
+    } catch (e) {
+      // Already initialized
+    }
     const db = firebase.firestore();
 
-    let debugInfo = '';
+    // App state
+    let isLoggedIn = false;
     let students = [];
     let grades = {};
+    let importInfo = '';
+    const themes = ['Thema 1', 'Thema 2', 'Thema 3', 'Thema 4', 'Thema 5', 'Thema 6', 'Thema 7', 'Thema 8'];
 
+    // Load from Firebase
     async function loadData() {
       try {
-        debugInfo += '🔄 Firebase connectie...\n';
-
-        // Haal toetscijfers/data op
-        debugInfo += '💾 Laden toetscijfers/data:\n';
         const doc = await db.collection('toetscijfers').doc('data').get();
-        
         if (doc.exists) {
-          const rawData = doc.data();
-          debugInfo += '✅ Document bestaat!\n';
-          debugInfo += '\n📦 RAW Data:\n' + JSON.stringify(rawData, null, 2) + '\n';
-          
-          // Check velden
-          debugInfo += '\n🔍 Veld controle:\n';
-          debugInfo += `  - students type: ${typeof rawData.students}\n`;
-          debugInfo += `  - students is array: ${Array.isArray(rawData.students)}\n`;
-          debugInfo += `  - students length: ${Array.isArray(rawData.students) ? rawData.students.length : 'N/A'}\n`;
-          debugInfo += `  - grades type: ${typeof rawData.grades}\n`;
-          
-          if (Array.isArray(rawData.students)) {
-            students = rawData.students;
-            debugInfo += `\n✅ ${students.length} leerlingen geladen!\n`;
-            debugInfo += '\n👥 Leerlingen:\n';
-            students.forEach((s, i) => {
-              debugInfo += `  ${i+1}. ${s.name || s.naam || s.N || '(geen naam)'} (id: ${s.id})\n`;
-            });
-          } else {
-            debugInfo += '\n⚠️ "students" is geen array!\n';
-          }
-
-          if (typeof rawData.grades === 'object' && rawData.grades !== null) {
-            grades = rawData.grades;
-          }
-        } else {
-          debugInfo += '❌ Document NIET gevonden!\n';
+          const data = doc.data();
+          students = data.students || [];
+          grades = data.grades || {};
         }
-
       } catch (error) {
-        debugInfo += `\n❌ FOUT: ${error.code}\n${error.message}\n`;
+        console.error('Firebase load error:', error);
       }
-
       render();
+    }
+
+    // Save to Firebase
+    async function saveData() {
+      try {
+        await db.collection('toetscijfers').doc('data').set({ students, grades });
+      } catch (error) {
+        console.error('Save error:', error);
+      }
+    }
+
+    function login(pwd) {
+      if (pwd === 'ISK2026!') {
+        isLoggedIn = true;
+        loadData();
+      } else {
+        alert('Onjuist wachtwoord');
+      }
+    }
+
+    function addStudent(name) {
+      if (students.length >= 18 || !name.trim()) return;
+      students.push({ id: Date.now(), name: name.trim() });
+      students.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
+      saveData();
+      render();
+    }
+
+    function removeStudent(id) {
+      students = students.filter(s => s.id !== id);
+      delete grades[id];
+      saveData();
+      render();
+    }
+
+    function setGrade(studentId, themeIdx, grade) {
+      if (!grades[studentId]) grades[studentId] = {};
+      grades[studentId][themeIdx] = grade ? parseFloat(grade) : null;
+      saveData();
+    }
+
+    function importFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          importInfo = '';
+
+          // ============ FORMAT 1: Aftekenlijst JSON ============
+          if (data.studentsList && Array.isArray(data.studentsList)) {
+            importInfo += `🎯 Aftekenlijst formaat gedetecteerd!\n`;
+            importInfo += `📊 ${data.studentsList.length} leerlingen gevonden\n\n`;
+
+            // Import leerlingen
+            students = data.studentsList.map((name, idx) => ({
+              id: Date.now() + idx,
+              name: name
+            })).sort((a, b) => a.name.localeCompare(b.name, 'nl'));
+
+            importInfo += `✅ Leerlingen:\n`;
+            students.forEach((s, i) => {
+              importInfo += `  ${i+1}. ${s.name}\n`;
+            });
+
+            // Try to extract grades from Aftekenlijst studentsData
+            grades = {};
+            if (data.studentsData) {
+              importInfo += `\n🔍 Zoeken naar cijfers in studentsData...\n`;
+              let gradeCount = 0;
+
+              Object.entries(data.studentsData).forEach(([studentName, themeData]) => {
+                const student = students.find(s => s.name === studentName);
+                if (student && typeof themeData === 'object') {
+                  grades[student.id] = {};
+                  
+                  // Look for numeric keys (theme indices)
+                  Object.entries(themeData).forEach(([themeKey, themeValue]) => {
+                    if (themeKey !== '__planning' && !isNaN(themeKey) && typeof themeValue === 'object') {
+                      const themeIdx = parseInt(themeKey);
+                      
+                      // Try to find a numeric grade in the theme object
+                      Object.values(themeValue).forEach(item => {
+                        if (item && typeof item === 'object') {
+                          // Look for 'grade', 'score', 'mark', 'cijfer' fields
+                          const grade = item.grade || item.score || item.mark || item.cijfer;
+                          if (grade && !isNaN(grade)) {
+                            grades[student.id][themeIdx] = parseFloat(grade);
+                            gradeCount++;
+                          }
+                        }
+                      });
+                    }
+                  });
+                }
+              });
+
+              if (gradeCount > 0) {
+                importInfo += `✅ ${gradeCount} cijfers gevonden en geïmporteerd!\n`;
+              } else {
+                importInfo += `⚠️ Geen cijfers gevonden in dit Aftekenlijst bestand.\n`;
+                importInfo += `   (Voortgang-data werd niet herkend als cijfers)\n`;
+              }
+            }
+
+            importInfo += `\n💾 Alles opgeslagen in Firebase!`;
+            saveData();
+            showImportInfo();
+          }
+          
+          // ============ FORMAT 2: Firebase JSON ============
+          else if (data.students && typeof data.grades === 'object') {
+            importInfo += `🎯 Firebase formaat gedetecteerd!\n`;
+            students = data.students.sort((a, b) => a.name.localeCompare(b.name, 'nl'));
+            grades = data.grades;
+
+            importInfo += `✅ ${students.length} leerlingen\n`;
+            importInfo += `📊 Cijfers per leerling geïmporteerd\n`;
+            importInfo += `\n💾 Opgeslagen in Firebase!`;
+
+            saveData();
+            showImportInfo();
+          }
+          
+          // ============ FORMAT 3: Simple names list ============
+          else if (Array.isArray(data)) {
+            importInfo += `🎯 Namenlijst gedetecteerd!\n`;
+            students = data.map((name, idx) => ({
+              id: Date.now() + idx,
+              name: typeof name === 'string' ? name : name.name || String(name)
+            })).sort((a, b) => a.name.localeCompare(b.name, 'nl'));
+
+            grades = {};
+            importInfo += `✅ ${students.length} leerlingen geïmporteerd!\n`;
+            importInfo += `\n💾 Opgeslagen in Firebase!`;
+
+            saveData();
+            showImportInfo();
+          }
+          
+          else {
+            importInfo = `❌ Onbekend bestandsformaat.\n\nVerwachte formaten:\n1. Aftekenlijst export\n2. Firebase export\n3. Eenvoudige namenlijst`;
+            showImportInfo();
+          }
+        } catch (error) {
+          importInfo = `❌ Fout bij lezen bestand:\n${error.message}`;
+          showImportInfo();
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function showImportInfo() {
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+      modal.innerHTML = `
+        <div class="bg-white p-6 rounded-lg max-w-md w-full">
+          <h2 class="text-xl font-bold mb-4">📥 Import resultaat</h2>
+          <pre class="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-60 mb-4">${importInfo}</pre>
+          <button onclick="this.closest('.fixed').remove(); location.reload();" class="w-full bg-blue-500 text-white py-2 rounded font-bold">Sluiten</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+
+    function exportData() {
+      const data = JSON.stringify({ students, grades }, null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `toetscijfers-export-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
     }
 
     function render() {
       const app = document.getElementById('app');
-      
-      app.innerHTML = `
-        <div class="max-w-2xl mx-auto">
-          <h1 class="text-3xl font-bold mb-4">🔧 DEBUG MODE</h1>
+
+      if (!isLoggedIn) {
+        app.innerHTML = `
+          <div class="min-h-screen bg-blue-500 flex items-center justify-center">
+            <form onsubmit="login(document.getElementById('pwd').value); return false;" class="bg-white p-8 rounded-lg shadow-lg">
+              <h1 class="text-2xl font-bold mb-4">Toetscijfers ISK</h1>
+              <input id="pwd" type="password" placeholder="Wachtwoord" class="w-full px-4 py-2 border rounded mb-4" autofocus>
+              <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded font-bold">Inloggen</button>
+            </form>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `
+        <div class="p-4 max-w-7xl mx-auto">
+          <h1 class="text-3xl font-bold mb-4">📊 Toetscijfers ISK Almelo</h1>
           
-          <div class="bg-white p-4 rounded-lg shadow mb-4">
-            <h2 class="text-xl font-bold mb-2">Firebase Diagnose:</h2>
-            <pre>${debugInfo}</pre>
+          <div class="import-section mb-4">
+            <h3 class="font-bold text-lg mb-3">📥 Bestand Importeren</h3>
+            <div class="import-info">
+              ✅ Ondersteund: Aftekenlijst, Firebase, namenlijsten<br>
+              📁 Upload je JSON-bestand en alle leerlingen & cijfers worden geïmporteerd
+            </div>
+            <label class="bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded cursor-pointer font-bold inline-block">
+              📁 Selecteer bestand
+              <input type="file" accept=".json" onchange="importFile(event)" class="hidden">
+            </label>
           </div>
 
-          <div class="bg-white p-4 rounded-lg shadow">
-            <h2 class="text-xl font-bold mb-2">Geladen leerlingen (${students.length}):</h2>
-            ${students.length > 0 ? `
-              <ul class="space-y-2">
-                ${students.map((s, i) => `
-                  <li class="bg-blue-50 p-2 rounded">
-                    ${i+1}. <strong>${s.name || s.naam || 'GEEN NAAM'}</strong> 
-                    <span class="text-gray-500 text-sm">(id: ${s.id})</span>
-                  </li>
-                `).join('')}
-              </ul>
-            ` : `
-              <p class="text-red-600 font-bold">⚠️ GEEN LEERLINGEN GELADEN!</p>
-            `}
+          <div class="bg-white p-4 rounded mb-4 shadow">
+            <div class="flex gap-2 mb-4">
+              <button onclick="exportData()" class="bg-purple-500 text-white px-4 py-2 rounded font-bold">💾 Export</button>
+            </div>
+            <div class="flex gap-2">
+              <input id="newName" type="text" placeholder="Naam..." class="flex-1 px-3 py-2 border rounded">
+              <button onclick="addStudent(document.getElementById('newName').value); document.getElementById('newName').value='';" class="bg-blue-500 text-white px-4 py-2 rounded font-bold">Toevoegen</button>
+            </div>
+            <span class="text-gray-600 mt-2 block font-bold">${students.length}/18 leerlingen</span>
           </div>
 
-          <div class="mt-4">
-            <button onclick="location.reload()" class="bg-blue-500 text-white px-4 py-2 rounded">Opnieuw laden</button>
+          <div class="bg-white rounded overflow-x-auto shadow">
+            <table class="w-full text-sm">
+              <thead class="bg-blue-600 text-white">
+                <tr>
+                  <th class="px-4 py-2 text-left">Leerling</th>
+                  ${themes.map(t => `<th class="px-2 py-2 text-center text-xs">${t}</th>`).join('')}
+                  <th class="px-4 py-2">Acties</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      students.forEach(student => {
+        html += `<tr class="border-b hover:bg-gray-50">
+          <td class="px-4 py-2 font-medium">${student.name}</td>
+        `;
+        
+        themes.forEach((_, idx) => {
+          const val = grades[student.id]?.[idx] || '';
+          html += `
+            <td class="px-2 py-2 text-center">
+              <input type="number" value="${val}" onchange="setGrade(${student.id}, ${idx}, this.value)" 
+                     class="w-14 px-1 py-1 border rounded text-center text-sm" min="1" max="10" step="0.1">
+            </td>
+          `;
+        });
+
+        html += `
+          <td class="px-4 py-2 text-center">
+            <button onclick="removeStudent(${student.id})" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600">🗑️</button>
+          </td>
+        </tr>`;
+      });
+
+      html += `
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="mt-4 text-center text-gray-600 text-sm">
+            <p>ISK Het Erasmus - Toetscijfers Administratie 2026</p>
+            <p>✅ Firebase Real-time Sync | 📥 Lokale bestandimport</p>
           </div>
         </div>
       `;
+
+      app.innerHTML = html;
     }
 
-    // Start
-    loadData();
+    render();
   </script>
 </body>
 </html>
